@@ -1,0 +1,1367 @@
+<!DOCTYPE html>
+<html lang="en" data-preset="calm">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2563eb">
+<title>Office Workspace</title>
+<!--
+  Online storage and deployment rely on the host-provided "online store / web publishing"
+  capability (on the reference host WorkBuddy this is the "shujuku" / library skill);
+  when that capability is unavailable the page degrades to pure localStorage offline mode,
+  with no loss of functionality.
+  ============================================================================
+  Skeleton template · office-workspace-builder
+  This file passes `scripts/verify.py` (all three gates, 0 FAIL). To generate a
+  workspace, rewrite it in these steps:
+    1. Edit CONFIG (id / name / tableName / preset), <title>, and the --primary theme colour.
+       preset has three tiers: calm | dense | report — see references/design-taste.md
+    2. Adjust the MODULES array to the modules chosen for this build
+    3. Replace the MODULE:2 / MODULE:3 placeholder blocks with real modules and
+       register their render functions inside refreshAll()
+    4. Fill in Store.sampleData() (at least one overdue item)
+    5. Add the new data keys to Store.empty() and migrate()
+    6. Run the gate before delivering — 0 FAIL required:
+         python scripts/verify.py  <this file>
+  Architecture discipline (Iron Rule 9): data layer -> compute layer -> render layer, one-way only;
+            refreshAll() is the single refresh entry point; render functions never call each other
+            (that causes infinite recursion and a stack overflow).
+  Visual discipline (Iron Rule 11): radius steps down lg > md > sm > xs; flat cards carry no
+            shadow — shadows are reserved for raised layers (sticky bar / pinned area). Avoid one
+            radius value for everything: that is the main source of "template smell".
+  Failure discipline (Iron Rule 12): a failed save must be visible (Store.saveError ->
+            renderStorageWarning); never swallow a catch silently.
+  File discipline (Iron Rule 13): never delete a file while rewriting this template. If something
+            should go, list it and let the user delete it themselves. Get consent before
+            overwriting any existing file.
+  ============================================================================
+-->
+<style>
+/* ===== Design tokens =====
+   Change theme: edit --primary. Change layout preset: edit CONFIG.preset (calm | dense | report).
+   Two visual disciplines (see references/design-taste.md):
+     1. Radius steps down: container lg > row md > control sm — never one value for everything
+     2. Flat cards never carry a shadow (--shadow-card:none); shadows go only to genuinely raised
+        layers (sticky bar / pinned area / overlays) */
+:root{
+  /* neutral scale */
+  --bg:#f5f7fa; --card:#ffffff;
+  --text:#1f2937; --text-2:#6b7280; --text-3:#9ca3af;
+  --line:#e5e7eb; --line-2:#f1f3f6;
+  /* primary: the only accent colour */
+  --primary:#2563eb; --primary-soft:#eff6ff;
+  /* semantic colours: state only, never decoration */
+  --danger:#dc2626; --danger-soft:#fef2f2;
+  --ok:#16a34a; --ok-soft:#f0fdf4;
+  --warn:#d97706; --warn-soft:#fffbeb;
+  /* interaction */
+  --tap:44px;
+  /* layout tokens: calm by default, overridden by the presets below */
+  --radius-lg:16px; --radius-md:10px; --radius-sm:6px; --radius-xs:4px;
+  --shadow-card:none;
+  --shadow-float:0 4px 14px rgba(16,24,40,.08);
+  --pad-card:20px; --gap:16px; --row-h:52px;
+  --fs-body:15px; --lh:1.65; --today-fs:18px;
+  --num-font:inherit;
+}
+/* ---- the three layout presets (selection guide: references/design-taste.md) ---- */
+:root[data-preset="calm"]{
+  --radius-lg:16px; --radius-md:10px; --radius-sm:6px; --radius-xs:4px;
+  --shadow-float:0 4px 14px rgba(16,24,40,.08);
+  --pad-card:20px; --gap:16px; --row-h:52px;
+  --fs-body:15px; --lh:1.65; --today-fs:18px; --num-font:inherit;
+}
+:root[data-preset="dense"]{
+  --radius-lg:10px; --radius-md:6px; --radius-sm:4px; --radius-xs:3px;
+  --shadow-float:0 2px 8px rgba(16,24,40,.06);
+  --pad-card:14px; --gap:10px; --row-h:40px;
+  --fs-body:14px; --lh:1.50; --today-fs:16px; --num-font:inherit;
+}
+:root[data-preset="report"]{
+  --radius-lg:6px; --radius-md:4px; --radius-sm:2px; --radius-xs:2px;
+  --shadow-float:0 1px 3px rgba(16,24,40,.05);
+  --pad-card:12px; --gap:8px; --row-h:34px;
+  --fs-body:13px; --lh:1.42; --today-fs:15px;
+  --num-font:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Helvetica,Arial,sans-serif;
+  font-size:var(--fs-body);
+  line-height:var(--lh);
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,p,ul,ol{margin:0;padding:0}
+ul,ol{list-style:none}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+a{color:var(--primary)}
+code{background:var(--line-2);padding:1px 5px;border-radius:var(--radius-sm);font-size:.86em;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+
+/* ===== Layout: sidebar on desktop / single column on mobile ===== */
+.app{display:grid;grid-template-columns:228px 1fr;min-height:100vh}
+.side{
+  background:var(--card);border-right:1px solid var(--line);
+  padding:18px 14px;position:sticky;top:0;height:100vh;overflow-y:auto;
+}
+.side-brand{display:flex;align-items:center;gap:9px;padding:4px 8px 18px;font-weight:700;font-size:16px}
+.side-brand svg{color:var(--primary);flex:none}
+.nav{display:flex;flex-direction:column;gap:3px}
+.nav button{
+  display:flex;align-items:center;gap:9px;width:100%;min-height:40px;
+  padding:8px 11px;border-radius:var(--radius-sm);font-size:14px;
+  color:var(--text-2);text-align:left;transition:background .15s,color .15s;
+}
+.nav button:hover{background:var(--line-2);color:var(--text)}
+.nav button.is-on{background:var(--primary-soft);color:var(--primary);font-weight:600}
+.nav button svg{flex:none;opacity:.85}
+.side-foot{margin-top:20px;padding:12px 10px;border-top:1px solid var(--line);
+  font-size:12px;color:var(--text-3);line-height:1.7}
+
+.main-wrap{min-width:0;display:flex;flex-direction:column}
+
+/* ===== Top bar (raised layer — it gets the shadow) ===== */
+.topbar{
+  position:sticky;top:0;z-index:20;background:rgba(255,255,255,.92);
+  backdrop-filter:saturate(180%) blur(8px);
+  border-bottom:1px solid var(--line);box-shadow:var(--shadow-float);
+  padding:10px 18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+}
+.topbar h1{font-size:17px;font-weight:500;flex:1;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.top-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+
+/* ===== Buttons ===== */
+.btn{
+  min-height:var(--tap);min-width:var(--tap);padding:0 13px;border-radius:var(--radius-sm);
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  font-size:14px;font-weight:500;color:var(--text-2);background:var(--line-2);
+  transition:background .15s,color .15s,opacity .15s;
+}
+.btn:hover{background:#e8ebf0;color:var(--text)}
+.btn.primary{background:var(--primary);color:#fff}
+.btn.primary:hover{background:#1d4ed8;color:#fff}
+.btn.ghost{background:transparent}
+.btn.ghost:hover{background:var(--line-2)}
+.btn.small{min-height:34px;min-width:34px;padding:0 9px;font-size:13px}
+.btn.danger{color:var(--danger)}
+.btn.danger:hover{background:var(--danger-soft)}
+.btn svg{flex:none}
+
+/* sync status indicator */
+.sync{
+  display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 10px;
+  border-radius:999px;background:var(--line-2);font-size:12.5px;color:var(--text-2);
+}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--text-3);flex:none}
+.dot.ok{background:var(--ok)}
+.dot.warn{background:var(--warn)}
+.dot.run{background:var(--primary);animation:pulse 1.1s ease-in-out infinite}
+.dot.idle{background:var(--text-3)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.28}}
+
+/* ===== Content area ===== */
+.content{padding:16px 18px 28px;display:flex;flex-direction:column;gap:var(--gap);max-width:1080px;width:100%}
+.card,.overview{scroll-margin-top:80px}
+/* Flat card: border only, never a shadow (shadows are a raised-layer privilege) */
+.card{
+  background:var(--card);border:1px solid var(--line);border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-card);padding:var(--pad-card);
+}
+.card-head{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.card-head h2{font-size:15px;font-weight:500;flex:1;min-width:0}
+.muted{font-size:12.5px;color:var(--text-3);font-weight:400}
+
+/* ===== Today (Iron Rule 5: pinned to the top) =====
+   Bleed region: borderless feel, raised, largest heading — its visual weight must beat every
+   other card. This is the one "lead actor" slot on the page; do not let it look like the rest. */
+.today{
+  border-color:#dbe4f5;background:linear-gradient(180deg,#fbfcff,var(--card) 42%);
+  box-shadow:var(--shadow-float);
+}
+.today .card-head h2{font-size:var(--today-fs);font-weight:500}
+.today-group{margin-bottom:12px}
+.today-group:last-child{margin-bottom:0}
+.today-group-head{
+  display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;
+  color:var(--text-2);margin-bottom:6px;padding-left:2px;
+}
+.today-group-head.danger{color:var(--danger)}
+.badge{
+  min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--line-2);
+  color:var(--text-2);font-size:11px;font-weight:600;display:inline-flex;
+  align-items:center;justify-content:center;
+}
+.today-group-head.danger .badge{background:var(--danger-soft);color:var(--danger)}
+
+/* ===== Data overview (fixed block, does not count against the module quota) ===== */
+.overview{
+  display:grid;grid-template-columns:repeat(3,1fr) auto;gap:12px;align-items:center;
+  background:var(--card);border:1px solid var(--line);border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-card);padding:14px 16px;
+}
+.stat-label{font-size:12.5px;color:var(--text-2);display:flex;align-items:center;gap:5px}
+.stat-value{font-size:24px;font-weight:500;line-height:1.25;margin-top:2px;font-family:var(--num-font)}
+.stat-value.danger{color:var(--danger)}
+.stat-value.ok{color:var(--ok)}
+.ring{width:82px;height:82px;display:block}
+.ring-txt{font-size:19px;font-weight:700;fill:var(--text)}
+.ring-cap{font-size:11.5px;color:var(--text-3);text-align:center;margin-top:-4px}
+
+/* ===== Task list module ===== */
+.task-form{display:grid;grid-template-columns:1fr auto auto auto;gap:8px;margin-bottom:11px}
+.task-form input[type=text],.task-form select,.task-form input[type=date]{
+  min-height:var(--tap);padding:0 11px;border:1px solid var(--line);
+  border-radius:var(--radius-sm);background:var(--card);color:var(--text);
+  font-size:16px;font-family:inherit;min-width:0;
+}
+.task-form input[type=date]{font-size:15px;color:var(--text-2)}
+.task-form input:focus,.task-form select:focus{outline:2px solid var(--primary-soft);border-color:var(--primary)}
+
+.filters{display:flex;gap:6px;margin-bottom:9px;overflow-x:auto;padding-bottom:2px;
+  scrollbar-width:none}
+.filters::-webkit-scrollbar{display:none}
+.chip{
+  min-height:32px;padding:0 12px;border-radius:999px;background:var(--line-2);
+  color:var(--text-2);font-size:13px;white-space:nowrap;flex:none;
+  transition:background .15s,color .15s;
+}
+.chip:hover{background:#e8ebf0}
+.chip.is-on{background:var(--primary);color:#fff;font-weight:600}
+
+.task-list{display:flex;flex-direction:column;gap:6px}
+.task{
+  display:flex;align-items:flex-start;gap:9px;padding:9px 10px;min-height:var(--row-h);
+  border:1px solid var(--line-2);border-radius:var(--radius-md);
+  background:var(--card);position:relative;overflow:hidden;
+}
+.task::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--line)}
+.task.p-P0::before{background:var(--danger)}
+.task.p-P1::before{background:var(--warn)}
+.task.p-P2::before{background:var(--text-3)}
+.task.is-overdue{background:var(--danger-soft);border-color:#fbd5d5}
+.task.is-done{opacity:.5}
+.task.is-done .task-title{text-decoration:line-through}
+.tick{
+  flex:none;width:24px;height:24px;margin-top:1px;display:flex;
+  align-items:center;justify-content:center;color:var(--text-3);border-radius:50%;
+}
+.tick:hover{color:var(--primary);background:var(--primary-soft)}
+.task.is-done .tick{color:var(--ok)}
+.task-main{flex:1;min-width:0}
+.task-title{font-size:14.5px;word-break:break-word}
+.task-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:3px;font-size:11.5px}
+.prio{padding:1px 6px;border-radius:var(--radius-xs);font-weight:600;background:var(--line-2);color:var(--text-2)}
+.prio.p-P0{background:var(--danger-soft);color:var(--danger)}
+.prio.p-P1{background:var(--warn-soft);color:var(--warn)}
+.tag{padding:1px 6px;border-radius:var(--radius-xs);background:var(--primary-soft);color:var(--primary)}
+.due{color:var(--text-3)}
+.due.overdue{color:var(--danger);font-weight:600}
+.task-acts{display:flex;align-items:center;gap:2px;flex:none}
+
+/* ===== Placeholder blocks (replaced at generation time) ===== */
+.slot{border-style:dashed;background:#fcfcfd}
+.slot-hint{font-size:13px;color:var(--text-2);line-height:1.85}
+.slot-hint ol{list-style:decimal;padding-left:19px;margin-top:6px}
+.slot-hint li{margin-bottom:3px}
+.slot-hint code{font-size:12px}
+
+/* ===== Empty state / hint bar ===== */
+.empty{padding:20px 6px;text-align:center;color:var(--text-3);font-size:13.5px}
+.empty svg{color:var(--line);display:block;margin:0 auto 8px}
+.tipbar{
+  display:none;align-items:center;gap:8px;font-size:13px;color:var(--warn);
+  background:var(--warn-soft);border:1px solid #fde68a;border-radius:var(--radius-sm);
+  padding:9px 12px;
+}
+.tipbar.is-on{display:flex}
+
+/* ===== Storage failure banner (Iron Rule 12: failure must be visible) ===== */
+.warnbar{
+  display:none;align-items:center;gap:8px;font-size:13px;color:var(--danger);
+  background:var(--danger-soft);border:1px solid #f7c1c1;border-radius:var(--radius-md);
+  padding:9px 12px;
+}
+.warnbar.is-on{display:flex}
+
+/* ===== CSV import panel ===== */
+.csv-panel{display:none}
+.csv-panel.is-on{display:block}
+.csv-map{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:10px;margin-bottom:12px}
+.csv-map label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--text-2)}
+.csv-map select{
+  min-height:var(--tap);padding:0 10px;border:1px solid var(--line);
+  border-radius:var(--radius-sm);background:var(--card);color:var(--text);
+  font-size:16px;font-family:inherit;min-width:0;
+}
+.csv-preview{overflow-x:auto;border:1px solid var(--line-2);border-radius:var(--radius-md);margin-bottom:10px}
+.csv-preview table{border-collapse:collapse;width:100%;font-size:12.5px;min-width:440px}
+.csv-preview th,.csv-preview td{
+  padding:6px 9px;text-align:left;border-bottom:1px solid var(--line-2);
+  white-space:nowrap;color:var(--text-2);
+}
+.csv-preview th{background:var(--line-2);color:var(--text);font-weight:500}
+.csv-acts{display:flex;gap:8px}
+
+/* ===== Mobile bottom tab bar (Iron Rule 4: safe-area aware) ===== */
+.tabbar{
+  display:none;position:fixed;left:0;right:0;bottom:0;z-index:30;
+  background:rgba(255,255,255,.96);backdrop-filter:saturate(180%) blur(8px);
+  border-top:1px solid var(--line);
+  padding:5px 4px calc(5px + env(safe-area-inset-bottom));
+}
+.tabbar-inner{display:flex;gap:2px}
+.tabbar button{
+  flex:1;min-height:var(--tap);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:2px;
+  font-size:10.5px;color:var(--text-3);border-radius:var(--radius-sm);
+}
+.tabbar button.is-on{color:var(--primary);font-weight:600}
+.tabbar button svg{width:19px;height:19px}
+
+/* ===== Responsive ===== */
+@media (max-width:900px){
+  .app{grid-template-columns:1fr}
+  .side{display:none}
+  .tabbar{display:block}
+  .content{padding:12px 12px calc(78px + env(safe-area-inset-bottom))}
+  .overview{grid-template-columns:repeat(3,1fr);gap:8px}
+  .overview .ring-wrap{grid-column:1/-1;display:flex;align-items:center;
+    justify-content:center;gap:12px;border-top:1px solid var(--line-2);padding-top:10px}
+  .ring-cap{text-align:left;margin-top:0;font-size:12.5px}
+  .task-form{grid-template-columns:1fr 1fr;gap:7px}
+  .task-form input[type=text]{grid-column:1/-1}
+  .task-form .btn{grid-column:1/-1}
+  .topbar{padding:9px 12px}
+  .topbar h1{font-size:16px}
+}
+@media (max-width:400px){
+  .overview{grid-template-columns:repeat(2,1fr)}
+  .stat-value{font-size:21px}
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ===== Desktop sidebar navigation ===== -->
+  <aside class="side">
+    <div class="side-brand">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/>
+      </svg>
+      <span id="brand-name">Office Workspace</span>
+    </div>
+    <nav class="nav" id="side-nav"></nav>
+    <div class="side-foot">
+      Autosaved<br>and synced to the cloud
+    </div>
+  </aside>
+
+  <div class="main-wrap">
+    <!-- ===== Top bar ===== -->
+    <header class="topbar">
+      <h1 id="topbar-title">Office Workspace</h1>
+      <div class="top-actions">
+        <button class="sync" id="btn-sync" data-act="sync" title="Click to retry sync">
+          <span class="dot idle" id="sync-dot"></span>
+          <span id="sync-text">Local storage</span>
+        </button>
+        <button class="btn ghost small" id="btn-export" data-act="export" title="Export a JSON backup">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          Export
+        </button>
+        <button class="btn ghost small" id="btn-csv" data-act="csv" title="Bulk import from a CSV / Excel export">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>
+          CSV
+        </button>
+        <button class="btn ghost small" id="btn-import" data-act="import" title="Restore from a JSON backup">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+          Import
+        </button>
+        <input type="file" id="file-import" accept=".json,application/json" hidden>
+        <input type="file" id="file-csv" accept=".csv,text/csv,text/plain" hidden>
+        <button class="btn ghost small danger" id="btn-clear" data-act="clear" title="Clear all data">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+          Clear
+        </button>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <!-- ===== Fixed block 1: Today (Iron Rule 5) ===== -->
+      <section class="card today" id="today-card">
+        <div class="card-head">
+          <h2>Today</h2>
+          <span class="muted" id="today-date"></span>
+        </div>
+        <div id="today-body"></div>
+      </section>
+
+      <!-- ===== Fixed block 2: data overview (does not count against the module quota) ===== -->
+      <section class="overview" id="overview">
+        <div>
+          <div class="stat-label">Open</div>
+          <div class="stat-value" id="stat-open">0</div>
+        </div>
+        <div>
+          <div class="stat-label">Overdue</div>
+          <div class="stat-value danger" id="stat-overdue">0</div>
+        </div>
+        <div>
+          <div class="stat-label">Done this week</div>
+          <div class="stat-value ok" id="stat-weekdone">0</div>
+        </div>
+        <div class="ring-wrap">
+          <div>
+            <div id="overview-ring"></div>
+            <div class="ring-cap">Overall completion</div>
+          </div>
+        </div>
+      </section>
+
+      <div class="tipbar" id="backup-tip">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+        <span id="backup-tip-text">Quite a few records now — click "Export" to save a backup</span>
+        <button class="btn ghost small" data-act="tip-close" style="margin-left:auto">Got it</button>
+      </div>
+
+      <!-- Storage failure banner (Iron Rule 12: a failed save must be visible, never silent) -->
+      <div class="warnbar" id="storage-warn"></div>
+
+      <!-- CSV import panel: rendered by renderCsvPanel() from State.csv -->
+      <div class="card csv-panel" id="csv-panel"></div>
+
+      <!-- MODULE:1 START - reference implementation: task list. Keep, replace, or remove. -->
+      <section class="card" id="module-tasks">
+        <div class="card-head">
+          <h2>Tasks</h2>
+          <span class="muted" id="task-count"></span>
+        </div>
+        <form class="task-form" id="task-form" autocomplete="off">
+          <input type="text" id="task-title" placeholder="Add a task, e.g. write up Wednesday review notes" maxlength="80" required>
+          <select id="task-prio" aria-label="Priority">
+            <option value="P0">P0 Urgent</option>
+            <option value="P1" selected>P1 Important</option>
+            <option value="P2">P2 Normal</option>
+          </select>
+          <input type="date" id="task-due" aria-label="Due date">
+          <button class="btn primary" type="submit">Add</button>
+        </form>
+        <div class="filters" id="task-filters">
+          <button class="chip is-on" data-act="filter" data-val="all">All</button>
+          <button class="chip" data-act="filter" data-val="open">Open</button>
+          <button class="chip" data-act="filter" data-val="P0">P0 only</button>
+          <button class="chip" data-act="filter" data-val="done">Done</button>
+        </div>
+        <ul class="task-list" id="task-list"></ul>
+      </section>
+      <!-- MODULE:1 END -->
+
+      <!-- MODULE:2 START - replace with a real module per references/office-modules.md -->
+      <section class="card slot" id="module-slot-2">
+        <div class="card-head"><h2>Module 2 placeholder</h2><span class="muted">to be generated</span></div>
+        <div class="slot-hint">
+          Replace this block with a real office module (candidates in <code>references/office-modules.md</code>):
+          <ol>
+            <li>Replace this <code>section</code> with the module's real structure and update the key/name in the <code>MODULES</code> array</li>
+            <li>Add a <code>renderXxx()</code>: read only from <code>Store.data</code>, write only to the DOM, and never call another render function</li>
+            <li>Register that render function inside <code>refreshAll()</code>, in the fixed order</li>
+            <li>Store the module's data under its own key in <code>Store.data</code>, and declare it in both <code>Store.empty()</code> and <code>sampleData()</code></li>
+            <li>Route events through <code>data-act</code> delegation; mutate data in the handler, then call <code>refreshAll()</code></li>
+          </ol>
+        </div>
+      </section>
+      <!-- MODULE:2 END -->
+
+      <!-- MODULE:3 START - replace with a real module per references/office-modules.md -->
+      <section class="card slot" id="module-slot-3">
+        <div class="card-head"><h2>Module 3 placeholder</h2><span class="muted">to be generated</span></div>
+        <div class="slot-hint">
+          Same as above. If this build only needs two modules, remove this block entirely and drop the
+          matching entry from <code>MODULES</code>.
+        </div>
+      </section>
+      <!-- MODULE:3 END -->
+
+    </main>
+  </div>
+</div>
+
+<!-- ===== Mobile bottom tab bar ===== -->
+<nav class="tabbar" id="tabbar"><div class="tabbar-inner" id="tabbar-inner"></div></nav>
+
+<script>
+/* ==========================================================================
+   0 · Configuration
+   ========================================================================== */
+const CONFIG = {
+  id: 'office_desk',                        // workspace id: ^[a-z][a-z0-9_]{2,30}$
+  name: 'Office Workspace',
+  tableName: 'workspace_office_desk',       // host data-table name
+  preset: 'calm',                           // layout preset: calm | dense | report
+                                            // selection guide: references/design-taste.md
+  maxModules: 4
+};
+const LSK = 'wb_' + CONFIG.id + '_';        // localStorage key prefix (Iron Rule 1)
+
+/* Module list: drives the sidebar and the bottom tab bar. Edit per build. */
+const MODULES = [
+  { key: 'today',   name: 'Today',    icon: 'cal',   target: 'today-card' },
+  { key: 'tasks',   name: 'Tasks',    icon: 'list',  target: 'module-tasks', built: true },
+  { key: 'slot2',   name: 'Module 2', icon: 'grid',  target: 'module-slot-2' },
+  { key: 'slot3',   name: 'Module 3', icon: 'chart', target: 'module-slot-3' }
+];
+
+/* ==========================================================================
+   1 · Icons (inline SVG, Iron Rule 3: no emoji)
+   ========================================================================== */
+const ICON = {
+  cal:    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg>',
+  list:   '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
+  grid:   '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+  chart:  '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18M7 15l4-5 4 3 5-7"/></svg>',
+  circle: '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>',
+  check:  '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.3l2.5 2.5 4.5-5"/></svg>',
+  trash:  '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>',
+  spark:  '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>',
+  alert:  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>'
+};
+
+/* ==========================================================================
+   2 · Utilities (pure functions, no side effects)
+   ========================================================================== */
+function pad2(n) { return String(n).padStart(2, '0'); }
+function toISO(dt) { return dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate()); }
+function todayISO() { return toISO(new Date()); }
+function addDays(iso, n) {
+  const p = String(iso).split('-').map(Number);
+  const dt = new Date(p[0], p[1] - 1, p[2]);
+  dt.setDate(dt.getDate() + n);            // Date rolls over automatically — month/year safe
+  return toISO(dt);
+}
+function diffDays(a, b) {                  // a - b, normalised through UTC to dodge timezone drift
+  if (!a || !b) return NaN;
+  const pa = String(a).split('-').map(Number), pb = String(b).split('-').map(Number);
+  if (pa.length < 3 || pb.length < 3) return NaN;
+  return Math.round((Date.UTC(pa[0], pa[1] - 1, pa[2]) - Date.UTC(pb[0], pb[1] - 1, pb[2])) / 86400000);
+}
+const WEEK_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MON_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function fmtDate(iso) {
+  if (!iso) return 'No due date';
+  const p = String(iso).split('-').map(Number);
+  if (p.length < 3) return iso;
+  const t = todayISO();
+  const d = diffDays(iso, t);
+  if (d === 0) return 'Today';
+  if (d === 1) return 'Tomorrow';
+  if (d === -1) return 'Yesterday';
+  if (d < 0) return MON_EN[p[1] - 1] + ' ' + p[2] + ' · ' + Math.abs(d) + 'd overdue';
+  if (d <= 6) return MON_EN[p[1] - 1] + ' ' + p[2] + ' · ' + WEEK_EN[new Date(p[0], p[1] - 1, p[2]).getDay()];
+  return MON_EN[p[1] - 1] + ' ' + p[2];
+}
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+/* ==========================================================================
+   3 · Host storage adapter
+   Fill these three methods from the host capability's real API docs. The rest of
+   the page depends only on this adapter layer.
+   WARNING: never invent API names — read the docs first. If no clear API is
+   available, leave enabled = false, fall back to localStorage, and tell the user
+   in the hand-over note that the workspace runs in local mode.
+   ========================================================================== */
+const CloudAdapter = {
+  enabled: false,
+  status: 'local',              // synced | syncing | offline | local
+  lastSync: 0,
+
+  async health() {
+    if (!this.enabled) { this.status = 'local'; return false; }
+    // TODO: probe the host online store for connectivity
+    return true;
+  },
+  async pull() {
+    if (!this.enabled) return null;
+    // TODO: read every record of the workspace_{id} table and assemble a Store.data shape
+    return null;
+  },
+  async push(_payload) {
+    if (!this.enabled) return false;
+    // TODO: upsert by primary key into the data table
+    return false;
+  }
+};
+
+/* ==========================================================================
+   4 · Data layer
+   ========================================================================== */
+const Store = {
+  data: null,
+  saveError: null,        // Iron Rule 12: why the save failed, rendered by renderStorageWarning()
+
+  empty() {
+    return { tasks: [], meta: { version: 1, updatedAt: Date.now() } };
+  },
+
+  /* Iron Rule 6: seed 3-5 sample records, at least one of them overdue */
+  sampleData() {
+    const t = todayISO();
+    return {
+      tasks: [
+        { id: 'sp1', title: 'Draft the Q3 department budget', priority: 'P0', due: addDays(t, -2), done: false, tag: 'Finance', note: '', updated_at: Date.now() - 90000 },
+        { id: 'sp2', title: 'Write up Wednesday design review notes', priority: 'P1', due: t, done: false, tag: 'Meeting', note: '', updated_at: Date.now() - 80000 },
+        { id: 'sp3', title: 'Reply to client on contract terms', priority: 'P1', due: t, done: false, tag: 'Client', note: '', updated_at: Date.now() - 70000 },
+        { id: 'sp4', title: 'Refresh the project milestone board', priority: 'P2', due: addDays(t, 2), done: false, tag: 'Project', note: '', updated_at: Date.now() - 60000 },
+        { id: 'sp5', title: 'Compile last week timesheet report', priority: 'P2', due: addDays(t, -1), done: true, tag: 'Report', note: '', updated_at: Date.now() - 50000 }
+      ],
+      meta: { version: 1, updatedAt: Date.now() }
+    };
+  },
+
+  load() {
+    let raw = null;
+    try { raw = localStorage.getItem(LSK + 'data'); } catch (e) { raw = null; }
+    if (!raw) {                                  // first open -> seed sample data
+      this.data = this.sampleData();
+      this.save();
+      return this.data;
+    }
+    try {
+      this.data = migrate(JSON.parse(raw));
+    } catch (e) {
+      this.data = this.empty();
+    }
+    if (!this.data || typeof this.data !== 'object') this.data = this.empty();
+    ensureShape(this.data);
+    return this.data;
+  },
+
+  /* Writes the local cache only: save() and the init pull-merge share this one path,
+     so a failure is always visible. */
+  cacheOnly() {
+    try {
+      localStorage.setItem(LSK + 'data', JSON.stringify(this.data));
+      this.saveError = null;
+      return true;
+    } catch (e) {
+      /* Iron Rule 12: never swallow a full quota / storage-disabled failure —
+         the user would think it saved, then lose everything on refresh.
+         Record the reason here; renderStorageWarning() does the showing
+         (render functions never call each other). */
+      this.saveError = 'Local save failed: the browser storage is full or has been disabled.'
+        + ' This change will be lost on refresh — click "Export" to back up now,'
+        + ' then remove some old data and try again.';
+      return false;
+    }
+  },
+
+  save() {
+    this.data.meta = this.data.meta || {};
+    this.data.meta.updatedAt = Date.now();
+    const ok = this.cacheOnly();
+    if (CloudAdapter.enabled) queuePush();
+    return ok;
+  },
+
+  tasks() { return Array.isArray(this.data.tasks) ? this.data.tasks : []; }
+};
+
+/* Add-only, never remove fields (keeps data backward compatible across iterations) */
+function ensureShape(d) {
+  if (!Array.isArray(d.tasks)) d.tasks = [];
+  if (!d.meta || typeof d.meta !== 'object') d.meta = { version: 1, updatedAt: Date.now() };
+}
+function migrate(data) {
+  if (!data || typeof data !== 'object') return Store.empty();
+  if (!data.meta || typeof data.meta !== 'object') data.meta = { version: 1 };
+  // v1 -> v2 migration logic goes here
+  return data;
+}
+
+/* Conflict merge: same id -> newer updated_at wins; both sides' additions survive
+   (see references/library-integration.md) */
+function mergeData(local, remote) {
+  if (!remote || typeof remote !== 'object') return local;
+  const out = {};
+  const keys = new Set(Object.keys(local || {}).concat(Object.keys(remote || {})));
+  keys.forEach(function (k) {
+    const l = local ? local[k] : null, r = remote ? remote[k] : null;
+    if (Array.isArray(l) || Array.isArray(r)) {
+      const map = new Map();
+      (Array.isArray(l) ? l : []).concat(Array.isArray(r) ? r : []).forEach(function (item) {
+        if (!item || item.id == null) return;
+        const prev = map.get(item.id);
+        if (!prev) { map.set(item.id, item); return; }
+        map.set(item.id, (item.updated_at || 0) >= (prev.updated_at || 0) ? item : prev);
+      });
+      out[k] = Array.from(map.values());
+    } else {
+      out[k] = (r && (r.updated_at || 0) > ((l && l.updated_at) || 0)) ? r : l;
+    }
+  });
+  return out;
+}
+
+/* Offline queue: buffered while the host store is unreachable, replayed on reconnect */
+function queuePush() {
+  try {
+    const q = JSON.parse(localStorage.getItem(LSK + 'queue') || '[]');
+    q.push({ at: Date.now() });
+    localStorage.setItem(LSK + 'queue', JSON.stringify(q.slice(-200)));
+  } catch (e) { /* @silent-ok the offline queue is only a push fallback; a failed write does not affect the local main flow */ }
+}
+async function flushQueue() {
+  if (!CloudAdapter.enabled) return;
+  let q = [];
+  try { q = JSON.parse(localStorage.getItem(LSK + 'queue') || '[]'); } catch (e) { q = []; }
+  if (!q.length) return;
+  const ok = await CloudAdapter.push(Store.data);
+  if (ok) { try { localStorage.removeItem(LSK + 'queue'); } catch (e) { /* @silent-ok failing to clear the queue has no side effect; the next sync clears it again */ } }
+}
+
+/* ==========================================================================
+   5 · State layer (UI state, not persisted)
+   ========================================================================== */
+/* csv: parsed CSV data and column mapping waiting to be imported; null = panel closed */
+const State = { filter: 'all', csv: null };
+
+/* ==========================================================================
+   6 · Compute layer (pure computation, no DOM) — render functions may call this,
+   but never each other
+   ========================================================================== */
+function byDueAsc(a, b) {
+  if (!a.due && !b.due) return 0;
+  if (!a.due) return 1;
+  if (!b.due) return -1;
+  return a.due < b.due ? -1 : (a.due > b.due ? 1 : 0);
+}
+function isOverdue(t) { return !t.done && !!t.due && diffDays(t.due, todayISO()) < 0; }
+
+function getBuckets() {
+  const t = todayISO();
+  const open = Store.tasks().filter(function (x) { return !x.done; });
+  return {
+    overdue: open.filter(function (x) { return x.due && diffDays(x.due, t) < 0; }).sort(byDueAsc),
+    today:   open.filter(function (x) { return x.due === t; }),
+    soon:    open.filter(function (x) { return x.due && diffDays(x.due, t) > 0 && diffDays(x.due, t) <= 3; }).sort(byDueAsc)
+  };
+}
+function getStats() {
+  const all = Store.tasks();
+  const done = all.filter(function (x) { return x.done; }).length;
+  const t = todayISO();
+  const wkStart = addDays(t, -6);
+  return {
+    total: all.length,
+    open: all.length - done,
+    overdue: all.filter(isOverdue).length,
+    weekDone: all.filter(function (x) {
+      return x.done && x.due && x.due >= wkStart && x.due <= t;
+    }).length,
+    rate: all.length ? done / all.length : 0
+  };
+}
+function getFilteredTasks() {
+  const all = Store.tasks().slice().sort(function (a, b) {
+    if (a.done !== b.done) return a.done ? 1 : -1;      // unfinished first
+    return byDueAsc(a, b);
+  });
+  const f = State.filter;
+  if (f === 'open') return all.filter(function (x) { return !x.done; });
+  if (f === 'done') return all.filter(function (x) { return x.done; });
+  if (f === 'P0') return all.filter(function (x) { return x.priority === 'P0'; });
+  return all;
+}
+function totalRecords() { return Store.tasks().length; }
+
+/* ==========================================================================
+   7 · Render layer
+   Iron Rule 9: render functions never call each other. All coupling goes through
+   refreshAll().
+   ========================================================================== */
+function taskRow(t, withPostpone) {
+  const od = isOverdue(t);
+  const row =
+    '<li class="task p-' + esc(t.priority || 'P2') + (t.done ? ' is-done' : '') + (od ? ' is-overdue' : '') + '" data-id="' + esc(t.id) + '">' +
+      '<button class="tick" data-act="toggle" data-id="' + esc(t.id) + '" aria-label="' + (t.done ? 'Mark as not done' : 'Mark as done') + '">' +
+        (t.done ? ICON.check : ICON.circle) +
+      '</button>' +
+      '<div class="task-main">' +
+        '<div class="task-title">' + esc(t.title) + '</div>' +
+        '<div class="task-meta">' +
+          '<span class="prio p-' + esc(t.priority || 'P2') + '">' + esc(t.priority || 'P2') + '</span>' +
+          (t.tag ? '<span class="tag">' + esc(t.tag) + '</span>' : '') +
+          '<span class="due' + (od ? ' overdue' : '') + '">' + esc(fmtDate(t.due)) + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="task-acts">' +
+        (withPostpone && !t.done ? '<button class="btn ghost small" data-act="postpone" data-id="' + esc(t.id) + '">Postpone</button>' : '') +
+        '<button class="btn ghost small danger" data-act="del" data-id="' + esc(t.id) + '" aria-label="Delete">' + ICON.trash + '</button>' +
+      '</div>' +
+    '</li>';
+  return row;
+}
+function todayGroup(title, arr, danger) {
+  if (!arr.length) return '';
+  return '<div class="today-group">' +
+    '<div class="today-group-head' + (danger ? ' danger' : '') + '">' + esc(title) +
+      '<span class="badge">' + arr.length + '</span></div>' +
+    '<ul class="task-list">' + arr.map(function (t) { return taskRow(t, true); }).join('') + '</ul>' +
+  '</div>';
+}
+
+function renderNav() {
+  const cur = State.filter === 'all' ? 'tasks' : 'tasks';
+  const sideHtml = MODULES.map(function (m) {
+    return '<button data-act="jump" data-val="' + esc(m.target) + '" class="' + (m.key === cur ? 'is-on' : '') + '">' +
+      (ICON[m.icon] || ICON.grid) + '<span>' + esc(m.name) + '</span></button>';
+  }).join('');
+  const sideEl = document.getElementById('side-nav');
+  if (sideEl) sideEl.innerHTML = sideHtml;
+
+  const tabEl = document.getElementById('tabbar-inner');
+  if (tabEl) {
+    tabEl.innerHTML = MODULES.map(function (m) {
+      return '<button data-act="jump" data-val="' + esc(m.target) + '" class="' + (m.key === cur ? 'is-on' : '') + '">' +
+        (ICON[m.icon] || ICON.grid) + '<span>' + esc(m.name) + '</span></button>';
+    }).join('');
+  }
+}
+
+function renderToday() {
+  const el = document.getElementById('today-body');
+  if (!el) return;
+  const dEl = document.getElementById('today-date');
+  if (dEl) {
+    const now = new Date();
+    dEl.textContent = WEEK_EN[now.getDay()] + ', ' + MON_EN[now.getMonth()] + ' ' + now.getDate();
+  }
+  const b = getBuckets();
+  if (!b.overdue.length && !b.today.length && !b.soon.length) {
+    el.innerHTML = '<div class="empty">' + ICON.spark + '<p>Nothing to handle today. Nice.</p></div>';
+    return;
+  }
+  el.innerHTML =
+    todayGroup('Overdue · deal with these first', b.overdue, true) +
+    todayGroup('Due today', b.today, false) +
+    todayGroup('Due within 3 days', b.soon, false);
+}
+
+function ringSVG(pct) {
+  const r = 42, c = 2 * Math.PI * r;
+  const p = Math.max(0, Math.min(1, pct || 0));
+  const off = c * (1 - p);
+  return '<svg class="ring" viewBox="0 0 110 110" role="img" aria-label="Overall completion ' + Math.round(p * 100) + '%">' +
+    '<circle cx="55" cy="55" r="' + r + '" fill="none" stroke="var(--line)" stroke-width="11"/>' +
+    '<circle cx="55" cy="55" r="' + r + '" fill="none" stroke="var(--primary)" stroke-width="11" stroke-linecap="round" ' +
+      'stroke-dasharray="' + c.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '" transform="rotate(-90 55 55)"/>' +
+    '<text x="55" y="55" text-anchor="middle" dominant-baseline="central" class="ring-txt">' + Math.round(p * 100) + '%</text>' +
+  '</svg>';
+}
+
+function renderOverview() {
+  const s = getStats();
+  const el = {
+    open: document.getElementById('stat-open'),
+    od: document.getElementById('stat-overdue'),
+    wk: document.getElementById('stat-weekdone'),
+    ring: document.getElementById('overview-ring')
+  };
+  if (el.open) el.open.textContent = s.open;
+  if (el.od) el.od.textContent = s.overdue;
+  if (el.wk) el.wk.textContent = s.weekDone;
+  if (el.ring) el.ring.innerHTML = ringSVG(s.rate);
+}
+
+/* MODULE:1 render — add a renderXxx() the same way when adding a new module */
+function renderTasks() {
+  const listEl = document.getElementById('task-list');
+  if (!listEl) return;
+  const arr = getFilteredTasks();
+  const cntEl = document.getElementById('task-count');
+  if (cntEl) {
+    const s = getStats();
+    cntEl.textContent = s.total + ' total · ' + s.open + ' open';
+  }
+  if (!arr.length) {
+    listEl.innerHTML = '<li class="empty">' + ICON.spark + '<p>No tasks here yet — add one with the field above.</p></li>';
+  } else {
+    listEl.innerHTML = arr.map(function (t) { return taskRow(t, false); }).join('');
+  }
+  const fEl = document.getElementById('task-filters');
+  if (fEl) {
+    Array.prototype.forEach.call(fEl.querySelectorAll('.chip'), function (c) {
+      c.classList.toggle('is-on', c.getAttribute('data-val') === State.filter);
+    });
+  }
+}
+
+function renderBackupTip() {
+  const el = document.getElementById('backup-tip');
+  if (!el) return;
+  let closed = false;
+  try { closed = localStorage.getItem(LSK + 'tip_closed') === '1'; } catch (e) { closed = false; }
+  const n = totalRecords();
+  el.classList.toggle('is-on', !closed && n >= 30);
+  const txt = document.getElementById('backup-tip-text');
+  if (txt) txt.textContent = 'You now have ' + n + ' records — click "Export" to save a backup';
+}
+
+function renderSync() {
+  const dot = document.getElementById('sync-dot');
+  const txt = document.getElementById('sync-text');
+  if (!dot || !txt) return;
+  const map = {
+    synced:  ['ok',   'Synced'],
+    syncing: ['run',  'Syncing'],
+    offline: ['warn', 'Offline mode'],
+    local:   ['idle', 'Local storage']
+  };
+  const m = map[CloudAdapter.status] || map.local;
+  dot.className = 'dot ' + m[0];
+  txt.textContent = m[1];
+  const btn = document.getElementById('btn-sync');
+  if (btn) btn.title = CloudAdapter.lastSync
+    ? ('Last sync: ' + new Date(CloudAdapter.lastSync).toLocaleString('en-US'))
+    : 'Data is stored on this device';
+}
+
+/* ===== The single refresh entry point (Iron Rule 9): fixed order, no render-to-render calls ===== */
+function refreshAll() {
+  renderNav();
+  renderToday();
+  renderOverview();
+  renderTasks();
+  renderCsvPanel();
+  renderBackupTip();
+  renderStorageWarning();
+  renderSync();
+}
+
+/* ==========================================================================
+   7.5 · Storage warning and CSV import
+   Data has to get in, and a failed save has to be seen — otherwise nobody really
+   uses the workspace.
+   ========================================================================== */
+
+/* Iron Rule 12: a failed save must be visible to the user, never silent */
+function renderStorageWarning() {
+  const el = document.getElementById('storage-warn');
+  if (!el) return;
+  if (!Store.saveError) { el.classList.remove('is-on'); el.innerHTML = ''; return; }
+  el.classList.add('is-on');
+  el.innerHTML = ICON.alert + '<span>' + esc(Store.saveError) + '</span>' +
+    '<button class="btn ghost small" data-act="warn-close" style="margin-left:auto;flex:none">Got it</button>';
+}
+
+/* Field hints stay bilingual: a Chinese-Excel export must still auto-map its headers. */
+const CSV_FIELDS = [
+  { key: 'title',    label: 'Title',    required: true,  hints: ['title', 'task', 'name', '标题', '任务', '事项', '名称'] },
+  { key: 'priority', label: 'Priority', required: false, hints: ['priority', 'level', '优先级', '级别', '等级'] },
+  { key: 'due',      label: 'Due date', required: false, hints: ['due', 'deadline', 'date', '到期', '截止', '日期', '时间'] },
+  { key: 'tag',      label: 'Tag',      required: false, hints: ['tag', 'category', '标签', '分类', '类别', '项目'] }
+];
+
+/* CSVs exported from Chinese Excel are GBK: try strict UTF-8 first, fall back to GBK */
+function decodeBytes(buf) {
+  const bytes = new Uint8Array(buf);
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+  catch (e) { /* @silent-ok not valid UTF-8 — intentionally falls through to the GBK branch below */ }
+  try { return new TextDecoder('gbk').decode(bytes); }
+  catch (e) { return new TextDecoder('utf-8').decode(bytes); }
+}
+
+/* Minimal CSV parser: quoted fields, commas and newlines inside fields, doubled-quote
+   escapes, CRLF, BOM */
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = '', inQ = false, i = 0;
+  const s = String(text).replace(/^\uFEFF/, '');
+  while (i < s.length) {
+    const c = s.charAt(i);
+    if (inQ) {
+      if (c === '"') {
+        if (s.charAt(i + 1) === '"') { field += '"'; i += 2; continue; }
+        inQ = false; i++; continue;
+      }
+      field += c; i++; continue;
+    }
+    if (c === '"') { inQ = true; i++; continue; }
+    if (c === ',') { row.push(field); field = ''; i++; continue; }
+    if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; i++; continue; }
+    if (c === '\r') { i++; continue; }
+    field += c; i++;
+  }
+  row.push(field);
+  rows.push(row);
+  return rows.filter(function (r) {
+    return r.some(function (x) { return String(x).trim() !== ''; });
+  });
+}
+
+function guessColumn(header, field) {
+  const hs = header.map(function (h) { return String(h).trim().toLowerCase(); });
+  for (let i = 0; i < field.hints.length; i++) {
+    for (let j = 0; j < hs.length; j++) {
+      if (hs[j] === field.hints[i].toLowerCase()) return j;
+    }
+  }
+  for (let i = 0; i < field.hints.length; i++) {
+    for (let j = 0; j < hs.length; j++) {
+      if (hs[j].indexOf(field.hints[i].toLowerCase()) >= 0) return j;
+    }
+  }
+  return -1;
+}
+/* Priority normalisation accepts both English and Chinese labels. */
+function normalizePriority(v) {
+  const s = String(v == null ? '' : v).trim().toUpperCase();
+  if (s === 'P0' || s === 'HIGH' || s === 'URGENT' || s.indexOf('高') >= 0 || s.indexOf('紧急') >= 0) return 'P0';
+  if (s === 'P2' || s === 'LOW' || s.indexOf('低') >= 0 || s.indexOf('常规') >= 0) return 'P2';
+  return 'P1';
+}
+function normalizeDate(v) {
+  const s = String(v == null ? '' : v).trim();
+  if (!s) return '';
+  let m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+  if (m) return m[1] + '-' + pad2(Number(m[2])) + '-' + pad2(Number(m[3]));
+  m = s.match(/^(\d{1,2})[-\/.](\d{1,2})$/);
+  if (m) return new Date().getFullYear() + '-' + pad2(Number(m[1])) + '-' + pad2(Number(m[2]));
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return toISO(d);
+  return '';
+}
+
+function readCsvFile(file) {
+  if (!file) return;
+  const r = new FileReader();
+  r.onload = function (e) {
+    let rows = [];
+    try { rows = parseCSV(decodeBytes(e.target.result)); } catch (err) { rows = []; }
+    if (rows.length < 2) {
+      alert('A CSV needs at least one header row and one data row. If your file is an Excel .xlsx, save it as CSV in Excel first.');
+      return;
+    }
+    const header = rows[0];
+    const map = {};
+    CSV_FIELDS.forEach(function (f) { map[f.key] = guessColumn(header, f); });
+    State.csv = { header: header, rows: rows.slice(1), map: map };
+    refreshAll();
+  };
+  r.readAsArrayBuffer(file);
+}
+
+function applyCsvImport() {
+  const c = State.csv;
+  if (!c) return;
+  if (c.map.title < 0) { alert('Map a column to "Title" before importing — it is the only required field.'); return; }
+  const batch = [];
+  let skipped = 0;
+  c.rows.forEach(function (r) {
+    const raw = r[c.map.title];
+    const title = String(raw == null ? '' : raw).trim();
+    if (!title) { skipped++; return; }
+    batch.push({
+      id: uid(),
+      title: title.slice(0, 80),
+      priority: c.map.priority >= 0 ? normalizePriority(r[c.map.priority]) : 'P1',
+      due: c.map.due >= 0 ? normalizeDate(r[c.map.due]) : '',
+      done: false,
+      tag: c.map.tag >= 0 ? String(r[c.map.tag] == null ? '' : r[c.map.tag]).trim().slice(0, 12) : '',
+      note: '',
+      updated_at: Date.now()
+    });
+  });
+  const added = batch.length;
+  Store.data.tasks = batch.concat(Store.tasks());
+  State.csv = null;
+  Store.save();
+  refreshAll();
+  alert('Import complete: ' + added + ' added' + (skipped ? ', ' + skipped + ' skipped (no title)' : ''));
+}
+
+function renderCsvPanel() {
+  const el = document.getElementById('csv-panel');
+  if (!el) return;
+  const c = State.csv;
+  if (!c) { el.classList.remove('is-on'); el.innerHTML = ''; return; }
+  el.classList.add('is-on');
+  const opts = function (sel) {
+    return '<option value="-1">Not used</option>' + c.header.map(function (h, i) {
+      const label = String(h).trim() || ('Column ' + (i + 1));
+      return '<option value="' + i + '"' + (i === sel ? ' selected' : '') + '>' + esc(label) + '</option>';
+    }).join('');
+  };
+  const preview = c.rows.slice(0, 3).map(function (r) {
+    return '<tr>' + c.header.map(function (_, i) {
+      const v = String(r[i] == null ? '' : r[i]);
+      return '<td>' + esc(v.length > 18 ? v.slice(0, 18) + '…' : v) + '</td>';
+    }).join('') + '</tr>';
+  }).join('');
+  el.innerHTML =
+    '<div class="card-head"><h2>Import CSV · confirm column mapping</h2>' +
+      '<span class="muted">' + c.rows.length + ' data rows</span></div>' +
+    '<div class="csv-map">' + CSV_FIELDS.map(function (f) {
+      return '<label><span>' + esc(f.label) + (f.required ? ' *' : '') + '</span>' +
+        '<select data-act="csv-map" data-val="' + esc(f.key) + '">' + opts(c.map[f.key]) + '</select></label>';
+    }).join('') + '</div>' +
+    '<div class="csv-preview"><table><thead><tr>' +
+      c.header.map(function (h) { return '<th>' + esc(String(h)) + '</th>'; }).join('') +
+    '</tr></thead><tbody>' + preview + '</tbody></table></div>' +
+    '<p class="muted" style="margin-bottom:10px">Preview of the first 3 rows. ' +
+      'Dates accept 2026-09-25 / 2026/9/25 / 9-25; priority accepts P0/P1/P2 or High/Medium/Low.</p>' +
+    '<div class="csv-acts">' +
+      '<button class="btn primary" data-act="csv-apply">Import these ' + c.rows.length + ' rows</button>' +
+      '<button class="btn ghost" data-act="csv-cancel">Cancel</button>' +
+    '</div>';
+}
+
+/* ==========================================================================
+   8 · Event handling — always "mutate data -> refreshAll()", never trigger a
+   render from inside a render
+   ========================================================================== */
+function findTask(id) {
+  const arr = Store.tasks();
+  for (let i = 0; i < arr.length; i++) { if (arr[i].id === id) return arr[i]; }
+  return null;
+}
+function touch(t) { if (t) t.updated_at = Date.now(); }
+
+function onAddTask(e) {
+  e.preventDefault();
+  const titleEl = document.getElementById('task-title');
+  const prioEl = document.getElementById('task-prio');
+  const dueEl = document.getElementById('task-due');
+  const title = (titleEl.value || '').trim();
+  if (!title) return;
+  Store.data.tasks.unshift({
+    id: uid(),
+    title: title.slice(0, 80),
+    priority: prioEl.value || 'P1',
+    due: dueEl.value || '',
+    done: false,
+    tag: '',
+    note: '',
+    updated_at: Date.now()
+  });
+  Store.save();
+  titleEl.value = '';
+  dueEl.value = '';
+  refreshAll();
+  titleEl.focus();
+}
+function onToggle(id) {
+  const t = findTask(id); if (!t) return;
+  t.done = !t.done;
+  touch(t);
+  Store.save();
+  refreshAll();
+}
+function onDelete(id) {
+  const t = findTask(id); if (!t) return;
+  if (!confirm('Delete the task "' + t.title + '"?')) return;
+  Store.data.tasks = Store.tasks().filter(function (x) { return x.id !== id; });
+  Store.save();
+  refreshAll();
+}
+function onPostpone(id) {
+  const t = findTask(id); if (!t) return;
+  const base = t.due && diffDays(t.due, todayISO()) < 0 ? todayISO() : (t.due || todayISO());
+  t.due = addDays(base, 1);
+  touch(t);
+  Store.save();
+  refreshAll();
+}
+function onFilter(val) {
+  State.filter = val || 'all';
+  refreshAll();
+}
+function jumpTo(targetId) {
+  const el = document.getElementById(targetId);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function exportJSON() {
+  try {
+    const blob = new Blob([JSON.stringify(Store.data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = CONFIG.name + '_' + todayISO() + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1500);
+  } catch (err) {
+    alert('Export failed — please try another browser.');
+  }
+}
+function importJSON(file) {
+  if (!file) return;
+  const r = new FileReader();
+  r.onload = function (e) {
+    let obj = null;
+    try { obj = JSON.parse(e.target.result); } catch (err) { obj = null; }
+    if (!obj || typeof obj !== 'object') { alert('Import failed: this is not a backup file for this workspace.'); return; }
+    Store.data = migrate(mergeData(Store.data, obj));
+    ensureShape(Store.data);
+    Store.save();
+    refreshAll();
+    alert('Import complete');
+  };
+  r.readAsText(file);
+}
+function clearAll() {
+  if (!confirm('Clear all data in "' + CONFIG.name + '"? This cannot be undone.')) return;
+  if (!confirm('Confirm again: every record will be permanently deleted. Consider clicking "Export" to back up first. Continue?')) return;
+  Store.data = Store.empty();
+  Store.save();
+  refreshAll();
+}
+
+/* ==========================================================================
+   9 · Init (Iron Rule 9: load data -> init state -> refreshAll())
+   ========================================================================== */
+function bindEvents() {
+  const form = document.getElementById('task-form');
+  if (form) form.addEventListener('submit', onAddTask);
+
+  const fileInput = document.getElementById('file-import');
+  const importBtn = document.getElementById('btn-import');
+  if (importBtn && fileInput) {
+    importBtn.addEventListener('click', function () { fileInput.click(); });
+    fileInput.addEventListener('change', function (e) {
+      const f = e.target.files && e.target.files[0];
+      importJSON(f);
+      e.target.value = '';
+    });
+  }
+
+  /* CSV file picker + mapping dropdowns (dropdowns fire change, not click) */
+  const csvInput = document.getElementById('file-csv');
+  if (csvInput) {
+    csvInput.addEventListener('change', function (e) {
+      const f = e.target.files && e.target.files[0];
+      readCsvFile(f);
+      e.target.value = '';
+    });
+  }
+  document.addEventListener('change', function (e) {
+    const sel = e.target && e.target.closest ? e.target.closest('[data-act="csv-map"]') : null;
+    if (!sel || !State.csv) return;
+    const key = sel.getAttribute('data-val');
+    const v = parseInt(sel.value, 10);
+    if (Object.prototype.hasOwnProperty.call(State.csv.map, key)) {
+      State.csv.map[key] = isNaN(v) ? -1 : v;
+    }
+    renderCsvPanel();   // re-render this one panel only; do not touch other render functions
+  });
+  const exp = document.getElementById('btn-export');
+  if (exp) exp.addEventListener('click', exportJSON);
+
+  const clr = document.getElementById('btn-clear');
+  if (clr) clr.addEventListener('click', clearAll);
+
+  const syncBtn = document.getElementById('btn-sync');
+  if (syncBtn) {
+    syncBtn.addEventListener('click', async function () {
+      if (!CloudAdapter.enabled) { alert('Local storage mode — data is saved in this browser on this device.'); return; }
+      CloudAdapter.status = 'syncing'; renderSync();
+      const ok = await CloudAdapter.health();
+      CloudAdapter.status = ok ? 'synced' : 'offline';
+      if (ok) { CloudAdapter.lastSync = Date.now(); await flushQueue(); }
+      renderSync();
+    });
+  }
+
+  /* Global event delegation: every interactive button goes through data-act */
+  document.addEventListener('click', function (e) {
+    const btn = e.target.closest ? e.target.closest('[data-act]') : null;
+    if (!btn) return;
+    const act = btn.getAttribute('data-act');
+    const id = btn.getAttribute('data-id');
+    const val = btn.getAttribute('data-val');
+    if (act === 'toggle') onToggle(id);
+    else if (act === 'del') onDelete(id);
+    else if (act === 'postpone') onPostpone(id);
+    else if (act === 'filter') onFilter(val);
+    else if (act === 'jump') jumpTo(val);
+    else if (act === 'csv') {
+      const fi = document.getElementById('file-csv');
+      if (fi) fi.click();
+    }
+    else if (act === 'csv-apply') applyCsvImport();
+    else if (act === 'csv-cancel') { State.csv = null; refreshAll(); }
+    else if (act === 'warn-close') { Store.saveError = null; renderStorageWarning(); }
+    else if (act === 'tip-close') {
+      try { localStorage.setItem(LSK + 'tip_closed', '1'); } catch (err) { /* @silent-ok only remembers that the tip was dismissed; a failed write just shows it again next time */ }
+      renderBackupTip();
+    }
+  });
+}
+
+async function init() {
+  /* 1. load data */
+  Store.load();
+
+  /* 2. init UI state + copy */
+  /* Layout preset: <html data-preset> selects the whole set of layout tokens
+     (see references/design-taste.md) */
+  const PRESETS = ['calm', 'dense', 'report'];
+  const preset = PRESETS.indexOf(CONFIG.preset) >= 0 ? CONFIG.preset : 'calm';
+  document.documentElement.setAttribute('data-preset', preset);
+
+  const nameEl = document.getElementById('brand-name');
+  const titleEl = document.getElementById('topbar-title');
+  if (nameEl) nameEl.textContent = CONFIG.name;
+  if (titleEl) titleEl.textContent = CONFIG.name;
+  document.title = CONFIG.name;
+  const dueEl = document.getElementById('task-due');
+  if (dueEl) dueEl.value = todayISO();
+
+  /* 3. bind events (the DOM is ready at this point) */
+  bindEvents();
+
+  /* 4. first render */
+  refreshAll();
+
+  /* 5. cloud sync: probe -> pull -> merge -> re-render (fails silently to local mode) */
+  try {
+    const ok = await CloudAdapter.health();
+    if (ok) {
+      CloudAdapter.status = 'syncing';
+      renderSync();
+      const remote = await CloudAdapter.pull();
+      if (remote) {
+        Store.data = migrate(mergeData(Store.data, remote));
+        ensureShape(Store.data);
+        Store.cacheOnly();
+        CloudAdapter.status = 'synced';
+        CloudAdapter.lastSync = Date.now();
+      } else {
+        CloudAdapter.status = 'synced';
+        CloudAdapter.lastSync = Date.now();
+      }
+      await flushQueue();
+    } else {
+      CloudAdapter.status = 'local';
+    }
+  } catch (err) {
+    CloudAdapter.status = 'offline';
+  }
+  renderSync();
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

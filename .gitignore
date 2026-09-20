@@ -1,0 +1,12 @@
+# Python bytecode left behind when the checker self-test imports smoke_check.py
+__pycache__/
+*.py[cod]
+
+# Local workspace data — never belongs in the repository
+.workbuddy/
+.claude/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+desktop.ini
