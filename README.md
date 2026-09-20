@@ -4,6 +4,10 @@
 
 > 中文 | [English](README.en.md)
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![type: Agent Skill](https://img.shields.io/badge/type-Agent%20Skill-blue.svg)](skills/office-workspace-builder/SKILL.md)
+[![verify: 3 gates · 0 FAIL](https://img.shields.io/badge/verify-3%20gates%20%C2%B7%200%20FAIL-brightgreen.svg)](#交付前验证)
+
 ## 包含的技能
 
 | 技能 | 说明 |
