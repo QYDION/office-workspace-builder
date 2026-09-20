@@ -1,7 +1,7 @@
 ---
 name: office-workspace-builder
 description: Generates a ready-to-use office workspace (single-file HTML) from a one-line or paragraph-length natural-language request. By default it deploys through the host's online-storage / web-publishing capability and keeps a data table in two-way sync, returning a live link; if that capability is unavailable it falls back to a local HTML file with localStorage. Use when the user asks for an office workspace, productivity desk, task manager, weekly-report desk, meeting-notes desk, dashboard, schedule, or project board — or asks to turn an office workflow into a working web tool, to make it work well on a phone, or to sync its data across devices.
-version: 1.0.0
+version: 1.0.1
 license: MIT
 author: 盘锦奇点科技有限公司 (Panjin QYDION Technology Co., Ltd.)
 ---
@@ -44,9 +44,10 @@ Turn a paragraph of office requirements into a workspace the user can open and s
 | `scripts/runtime_smoke.js` | Runtime checks: executes the JS against a DOM stub — init, sample data, date boundaries, interaction flows, CSV import, storage-full warning, empty-state safety |
 | `scripts/selftest.py` | Ruler self-test: confirms the checkers really do flag each known-bad sample. **Run this after touching any checker** — otherwise the PASS results from the other two gates mean nothing |
 
-> **Paths are relative to this skill's root.** The verification scripts inspect structure and behaviour rather than
-> wording, so they are not tied to the interface language. Run them from the skill root against whichever
-> workspace HTML you generated.
+> **Paths are relative to this skill's root** — the folder holding this SKILL.md. Run the scripts with that
+> folder as the working directory, and pass the **absolute path** of the workspace HTML you generated: a
+> relative path handed in from somewhere else will not resolve. The verification scripts inspect structure
+> and behaviour rather than wording, so they are not tied to the interface language.
 
 ## Standard workflow
 

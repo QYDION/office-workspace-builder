@@ -40,7 +40,16 @@ C_GRN = "\033[32m"
 C_DIM = "\033[2m"
 C_OFF = "\033[0m"
 
-if os.name == "nt" and not os.environ.get("WT_SESSION"):
+
+def _stdout_is_tty():
+    """Colour is for a human at a terminal; redirected or captured output stays plain."""
+    return bool(getattr(sys.stdout, "isatty", lambda: False)())
+
+
+if not _stdout_is_tty() or os.environ.get("NO_COLOR"):
+    # Redirected output (a log file, a pipe) must stay clean: no ANSI escapes in it
+    C_RED = C_YEL = C_GRN = C_DIM = C_OFF = ""
+elif os.name == "nt" and not os.environ.get("WT_SESSION"):
     # Older Windows consoles do not always support ANSI; degrade to plain text to be safe
     try:
         import ctypes
@@ -823,7 +832,9 @@ def check_file(path, quiet=False):
         print("{}Cannot read file: {} ({}){}".format(C_RED, path, e, C_OFF))
         return 1
 
-    print("\n{}━{} {} {}".format(C_DIM, "━" * 60, os.path.basename(path), C_OFF))
+    # Pure ASCII separator: a box-drawing glyph renders as mojibake on consoles whose code page
+    # is not UTF-8, and a checker that looks broken gets distrusted for no reason.
+    print("\n{}{} {} {}".format(C_DIM, "=" * 60, os.path.basename(path), C_OFF))
     print("{}path: {} | size: {:,} bytes | lines: {:,}{}".format(
         C_DIM, os.path.abspath(path), len(src.encode("utf-8")), src.count("\n") + 1, C_OFF))
 

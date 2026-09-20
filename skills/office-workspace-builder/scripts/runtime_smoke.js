@@ -110,7 +110,8 @@ async function main() {
   while ((m = re.exec(html)) !== null) blocks.push(m[1]);
   const js = blocks.join('\n;\n');
 
-  console.log('\n━━━ ' + path.basename(file) + ' | runtime smoke ' + '━'.repeat(30));
+  // ASCII separator on purpose -- a box-drawing glyph turns into mojibake on non-UTF-8 consoles
+  console.log('\n=== ' + path.basename(file) + ' | runtime smoke ' + '='.repeat(30));
   if (!js.trim()) { console.error('no inline <script> found'); process.exit(1); }
 
   // ---- build the sandbox

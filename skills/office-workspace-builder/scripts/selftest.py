@@ -15,6 +15,10 @@ Usage:
     python scripts/selftest.py -v         # also print the checker's raw output
 
 Exit code: 0 = every case behaved as expected; 1 = at least one did not.
+
+Cases whose rule needs node (the JS syntax rule shells out to `node --check`) are reported as SKIP
+when node is absent, never as failures -- node is optional, so a node-less run must still be honest
+rather than alarming.
 Standard library only.
 """
 
@@ -22,6 +26,7 @@ import io
 import os
 import re
 import sys
+import shutil
 import contextlib
 import importlib.util
 
@@ -29,8 +34,22 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SKELETON = os.path.normpath(os.path.join(HERE, "..", "assets", "workspace-skeleton.html"))
 
 C_RED, C_GRN, C_YEL, C_DIM, C_OFF = "\033[31m", "\033[32m", "\033[33m", "\033[2m", "\033[0m"
-if os.name == "nt" and not os.environ.get("WT_SESSION"):
+
+
+def _stdout_is_tty():
+    """Colour is for a human at a terminal; redirected or captured output stays plain."""
+    return bool(getattr(sys.stdout, "isatty", lambda: False)())
+
+
+if not _stdout_is_tty() or os.environ.get("NO_COLOR"):
     C_RED = C_GRN = C_YEL = C_DIM = C_OFF = ""
+elif os.name == "nt" and not os.environ.get("WT_SESSION"):
+    C_RED = C_GRN = C_YEL = C_DIM = C_OFF = ""
+
+# smoke_check.py downgrades the JS syntax rule to a WARN when node is missing (node is optional),
+# so a sample that is supposed to be caught by that rule cannot be caught on a node-less machine.
+NODE = shutil.which("node")
+NEEDS_NODE = {"JS syntax error (bracket mismatch)"}
 
 
 def _load_smoke():
@@ -164,10 +183,15 @@ def main(argv):
         print("{}Skeleton file not found: {}{}".format(C_RED, SKELETON, C_OFF))
         return 1
 
-    passed, failed = 0, 0
+    passed, failed, skipped = 0, 0, 0
     print("\n{}Checker regression tests -- {} cases{}\n".format(C_DIM, len(CASES), C_OFF))
 
     for name, mutate, want_fail, want_warn, expect_clean in CASES:
+        if name in NEEDS_NODE and not NODE:
+            skipped += 1
+            print("{}[SKIP] {:<38} node not installed -- this rule falls back to a WARN, "
+                  "nothing to measure against{}".format(C_YEL, name, C_OFF))
+            continue
         src = mutate(GOOD)
         code, out = run_check(src)
         got_fail = fail_rules(out)
@@ -198,12 +222,19 @@ def main(argv):
                 print("    {}| {}{}".format(C_DIM, line, C_OFF))
             print("")
 
-    print("\n{}Checker regression: {} passed | {} failed{}".format(
-        C_GRN if not failed else C_RED, passed, failed, C_OFF))
+    print("\n{}Checker regression: {} passed | {} failed | {} skipped{}".format(
+        C_GRN if not failed else C_RED, passed, failed, skipped, C_OFF))
     if failed:
         print("{}The checker itself is broken: fix the ruler before trusting any delivery{}".format(C_RED, C_OFF))
         return 1
-    print("{}Ruler is trustworthy: no false positives on the good sample, every bad sample caught{}".format(C_GRN, C_OFF))
+    if skipped:
+        print("{}Note: {} case(s) skipped because node is not installed. node is optional, but without it "
+              "the JS syntax rule and the runtime gate stay unverified -- install node and re-run for the "
+              "full three gates.{}".format(C_YEL, skipped, C_OFF))
+        print("{}Ruler is trustworthy for the cases that could be measured: no false positives on the good "
+              "sample, every measurable bad sample caught{}".format(C_GRN, C_OFF))
+    else:
+        print("{}Ruler is trustworthy: no false positives on the good sample, every bad sample caught{}".format(C_GRN, C_OFF))
     return 0
 
 

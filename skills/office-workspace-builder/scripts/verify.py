@@ -22,7 +22,17 @@ import subprocess
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 C_RED, C_GRN, C_YEL, C_DIM, C_OFF = "\033[31m", "\033[32m", "\033[33m", "\033[2m", "\033[0m"
-if os.name == "nt" and not os.environ.get("WT_SESSION"):
+
+
+def _stdout_is_tty():
+    """Colour is for a human at a terminal; redirected or captured output stays plain."""
+    return bool(getattr(sys.stdout, "isatty", lambda: False)())
+
+
+if not _stdout_is_tty() or os.environ.get("NO_COLOR"):
+    # A redirected run (a log file, a CI capture) must not collect ANSI escapes
+    C_RED = C_GRN = C_YEL = C_DIM = C_OFF = ""
+elif os.name == "nt" and not os.environ.get("WT_SESSION"):
     C_RED = C_GRN = C_YEL = C_DIM = C_OFF = ""
 
 PY = sys.executable
